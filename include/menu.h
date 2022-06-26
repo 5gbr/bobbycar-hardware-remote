@@ -7,10 +7,11 @@
 #define MENU_SET_PWM 4U
 #define MENU_SET_DRIVING_MODE 5U
 
-const char* DRIVING_MODES_TEXT[3] = {
+const char* DRIVING_MODES_TEXT[4] = {
     "DRIVEMODE_BOTH",
     "DRIVEMODE_LEFT",
-    "DRIVEMODE_RIGHT"
+    "DRIVEMODE_RIGHT",
+    "DRIVEMODE_THROTTLES"
 };
 
 void scanForDevices();
@@ -58,9 +59,10 @@ public:
         
         case MENU_SET_DRIVING_MODE:
             auto current_mode = inputs.getDrivingMode();
-            if (current_mode == STICK_MODE_LEFT) {inputs.setDrivingMode(STICK_MODE_RIGHT);}
+            if (current_mode == STICK_MODE_THROTTLES) {inputs.setDrivingMode(STICK_MODE_RIGHT);}
             else if (current_mode == STICK_MODE_RIGHT) {inputs.setDrivingMode(STICK_MODE_BOTH);}
             else if (current_mode == STICK_MODE_BOTH) {inputs.setDrivingMode(STICK_MODE_LEFT);}
+            else if (current_mode == STICK_MODE_LEFT) {inputs.setDrivingMode(STICK_MODE_THROTTLES);}
             update_menu();
         }
     }
@@ -158,15 +160,15 @@ private:
         switch (menu_index)
         {
         case MENU_MAIN:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             display.setCursor(0, 0);
             display.print("  Press confirm ");
-            display.setCursor(0, 1);
+            display.setCursor(0, CURSOR_NEXTLINE);
             display.print("     to scan    ");
             break;
 
         case MENU_SELECT_BOBBYCAR:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             MENU_SELECT_BOBBYCAR_SCROLL = false;
             firstLineIndex = 0;
             secondLineIndex = 0;
@@ -178,28 +180,28 @@ private:
             break;
 
         case MENU_CONNECTED_TO_BOBBYCAR:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             showConnected(MENU_SELECT_BOBBYCAR_INDEX);
             break;
 
         case MENU_CALIBRASTE_ANALOG_STICKS:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             display.setCursor(0, 0);
             display.print("  Press confirm ");
-            display.setCursor(0, 1);
+            display.setCursor(0, CURSOR_NEXTLINE);
             display.print("  to calibrate. ");
             break;
 
         case MENU_SET_DRIVING_MODE:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             display.setCursor(0,0);
             display.print("Mode:");
-            display.setCursor(0,1);
+            display.setCursor(0, CURSOR_NEXTLINE);
             display.print(DRIVING_MODES_TEXT[inputs.getDrivingMode()]);
             break;
 
         default:
-            display.clear();
+            display.fillRect(0,0, 240, 40, ILI9341_BLACK);
             break;
         }
     }

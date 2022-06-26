@@ -3,6 +3,8 @@
 // NVS
 #include <ArduinoNvs.h>
 
+#include <cmath>
+
 // Scroll text
 String firstLine = "";
 String secondLine = "";
@@ -11,9 +13,34 @@ uint secondLineIndex = 0;
 uint scrollTimer = 0;
 uint scrollTimerLimit = SCROLL_TIMER_DEFAULT_LIMIT;
 
+//mpu6050
+#include "I2Cdev.h"
+#include "MPU6050_6Axis_MotionApps20.h"
+MPU6050 mpu;
+#define INTERRUPT_PIN 18
+
 // Display
-#include <LiquidCrystal_I2C.h>
-LiquidCrystal_I2C display(0x27, LCD_COLS, LCD_ROWS);
+//#include <LiquidCrystal_I2C.h>
+//LiquidCrystal_I2C display(0x27, LCD_COLS, LCD_ROWS);
+
+#include "SPI.h"
+#include "Adafruit_GFX.h"
+#include "Adafruit_ILI9341.h"
+
+#define TFT_CLK 15
+#define TFT_MOSI 13
+#define TFT_DC 12
+#define TFT_RST 2
+#define TFT_CS 14
+#define TFT_MISO 22
+
+// Use hardware SPI (on Uno, #13, #12, #11) and the above for CS/DC
+//Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+// If using the breakout, change pins as desired
+Adafruit_ILI9341 display = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_MOSI, TFT_CLK, TFT_RST, TFT_MISO);
+
+#define TEXTSIZE 1
+#define CURSOR_NEXTLINE (TEXTSIZE*6 + 2)
 
 // Buttons
 #include "buttons.h"
@@ -97,14 +124,14 @@ int countBobbycarsFound()
 void scanForDevices()
 {
   clearBobbycars();
-  display.clear();
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
   display.setCursor(0, 0);
   display.print("Scan started...");
   Serial.println("Started BLE scan");
   NimBLEScanResults foundDevices = pBLEScan->start(SCAN_TIME, false);
   pBLEScan->clearResults();
   auto count = countBobbycarsFound();
-  display.clear();
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
   Serial.println("Finished BLE scan");
   if (count)
   {
@@ -113,12 +140,12 @@ void scanForDevices()
     display.printf("    Found %i", count);
     if (count == 1)
     {
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       display.print("   bobbycar.    ");
     }
     else
     {
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       display.print("   bobbycars.   ");
     }
     delay(700);
@@ -129,7 +156,7 @@ void scanForDevices()
     // No bobbycars
     display.setCursor(0, 0);
     display.print("  No bobbycars  ");
-    display.setCursor(0, 1);
+    display.setCursor(0, CURSOR_NEXTLINE);
     display.print("      found.    ");
     delay(1500);
     menu.switchMenu(MENU_MAIN);
@@ -171,7 +198,7 @@ void showBobbycarList(uint index)
   {
     // Only show one element because only one bobbycar was found (1 bobbycar found)
     menu.set_bobby_sel_scroll(false);
-    display.clear();
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
     auto first_index_string = bobbycar_name_list_transform(bobbycar_names[0], true);
     if (first_index_string.length() > 16)
     {
@@ -187,7 +214,7 @@ void showBobbycarList(uint index)
   {
     // Scrolling is needed (2 or more bobbycars found)
     menu.set_bobby_sel_scroll(true);
-    display.clear();
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
 
     auto first_index_string = bobbycar_name_list_transform(bobbycar_names[first_index], true);
     auto second_index_string = bobbycar_name_list_transform(bobbycar_names[second_index], false);
@@ -207,7 +234,7 @@ void showBobbycarList(uint index)
     }
     else
     {
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       display.print(second_index_string);
     }
   }
@@ -302,7 +329,7 @@ void handleScroll()
 
   if (secondLine != "")
   {
-    display.setCursor(0, 1);
+    display.setCursor(0, CURSOR_NEXTLINE);
     display.print(secondLine.substring(secondLineIndex, secondLineLastIndex) + "                ");
   }
 }
@@ -355,10 +382,10 @@ void discoverStatsCharacteristic()
   auto *pService = pClient->getService(bobbycar_service);
   if (pService == nullptr)
   {
-    display.clear();
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
     display.setCursor(0, 0);
     display.print("  Device is not ");
-    display.setCursor(0, 1);
+    display.setCursor(0, CURSOR_NEXTLINE);
     display.print("   a bobbycar!  ");
     delay(1200);
     return;
@@ -398,7 +425,7 @@ void showConnected(uint index)
 {
   display.setCursor(0, 0);
   display.print("Connected to");
-  display.setCursor(0, 1);
+  display.setCursor(0, CURSOR_NEXTLINE);
   if (bobbycar_names[index].length() > 16)
   {
     resetScrollDisplay();
@@ -489,18 +516,21 @@ void connectToBobbycar(uint index, bool reconnect)
   }
 }
 
+
 void setup()
 {
   Serial.begin(BAUD_RATE);
   Serial.println("Booting...");
 
   // Init lcd display
-  display.init();
-  display.backlight();
-  display.clear();
+  pinMode(23, OUTPUT);
+  digitalWrite(23, LOW);
+  display.begin();
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
   display.setCursor(0, 0);
+  display.setTextSize(TEXTSIZE);
   display.print("Booting...");
-  display.setCursor(0, 1);
+  display.setCursor(0, CURSOR_NEXTLINE);
   display.print("Bobbycar Remote");
 
   // NVS
@@ -549,6 +579,12 @@ void setup()
   int rYMCal = NVS.getInt("rYMCal");
   int rYSCal = NVS.getInt("rYSCal");
   int rYECal = NVS.getInt("rYECal");
+
+  int LTSCal = NVS.getInt("LTSCal");
+  int LTECal = NVS.getInt("LTECal");
+  int RTSCal = NVS.getInt("RTSCal");
+  int RTECal = NVS.getInt("RTECal");
+  
 
   if (lXMCal == 0)
   {
@@ -613,7 +649,27 @@ void setup()
     rYECal = RIGHT_ANALOG_Y_END;
     NVS.setInt("rYECal", RIGHT_ANALOG_Y_END);
   }
-
+  if (LTSCal == 0) 
+  {
+    LTSCal = LEFT_THROTTLE_START;
+    NVS.setInt("LTSCal", LEFT_THROTTLE_START);
+  }
+  if (RTSCal == 0) 
+  {
+    RTSCal = RIGHT_THROTTLE_START;
+    NVS.setInt("RTSCal", RIGHT_THROTTLE_START);
+  }
+  if (LTECal == 0) 
+  {
+    LTECal = LEFT_THROTTLE_END;
+    NVS.setInt("LTECal", LEFT_THROTTLE_END);
+  }
+  if (RTECal == 0) 
+  {
+    RTECal = RIGHT_THROTTLE_END;
+    NVS.setInt("RTECal", RIGHT_THROTTLE_END);
+  }
+  
   NVS.commit();
 
   // BLE
@@ -649,23 +705,31 @@ void setup()
   inputs.setPin(ANALOG_RIGHT_Y, RIGHT_ANALOG_Y_PIN);
   inputs.setPin(ANALOG_RIGHT_BUTTON, RIGHT_ANALOG_BTN_PIN);
 
+  inputs.setPin(THROTTLE_LEFT, LEFT_THROTTLE_PIN);
+  inputs.setPin(THROTTLE_RIGHT, RIGHT_THROTTLE_PIN);
+
   inputs.setDrivingMode(NVS.getInt("driveMode"));
 
   inputs.init();
 
+  //MPU
+  Serial.println("Setting up MPU6050...");
+  setupMPU();
+  Serial.println("MPU6050 Setup done");
+
   if (!digitalRead(BUTTON_CONFIRM_PIN))
   {
-    display.clear();
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
     display.setCursor(0, 0);
     display.print(" Erasing NVS... ");
     NVS.eraseAll(true);
     NVS.commit();
     delay(1000);
-    ESP.restart();
+    ESP.restart();    
   }
 
-  inputs.setPWMs(fSteer, bSteer, fDrive, bDrive);
-  inputs.setCalibrationValues(lXMCal, lXSCal, lXECal, lYMCal, lYSCal, lYECal, rXMCal, rXSCal, rXECal, rYMCal, rYSCal, rYECal);
+  inputs.setPWMs(fSteer, bSteer, fDrive*5, bDrive*5);
+  inputs.setCalibrationValues(lXMCal, lXSCal, lXECal, lYMCal, lYSCal, lYECal, rXMCal, rXSCal, rXECal, rYMCal, rYSCal, rYECal, LTSCal, LTECal, RTSCal, RTECal);
 
   // Setup done
   display.setCursor(0, 0);
@@ -681,12 +745,12 @@ bool nothingPressed()
 
 void calibrationScreen()
 {
-  display.clear();
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
   delay(1000);
-  display.setCursor(0, 0);
+/*display.setCursor(0, 0);
   display.print(" Move left stick");
-  display.setCursor(0, 1);
-  display.print("   in circles   ");
+  display.setCursor(0, CURSOR_NEXTLINE);
+  display.print("   in circles   "); */
 
   int LeftXMin = analogRead(LEFT_ANALOG_X_PIN);
   int LeftXMax = LeftXMin;
@@ -702,6 +766,15 @@ void calibrationScreen()
   int RightYMax = RightYMin;
   int RightYMiddle = RightYMin;
 
+  int LTMin = analogRead(LEFT_THROTTLE_PIN);
+  int LTMax = LTMin;
+  int RTMin = analogRead(RIGHT_THROTTLE_PIN);
+  int RTMax = RTMin;
+
+//  float WheelMin = ypr[0];
+//  float WheelMax = WheelMin;
+
+/*
   bool confirm_pressed = false;
 
   while (!confirm_pressed)
@@ -721,20 +794,29 @@ void calibrationScreen()
       LeftXMin = rawLeftX;
     if (rawLeftY < LeftYMin)
       LeftYMin = rawLeftY;
+    
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
+    display.setCursor(110, 0);
+    display.printf("%i<LX<%i", LeftXMin, LeftXMax);
 
-    display.setCursor(0, 0);
-    display.printf("%i<LX<%i       ", LeftXMin, LeftXMax);
-
-    display.setCursor(0, 1);
-    display.printf("%i<LY<%i       ", LeftYMin, LeftYMax);
+    display.setCursor(110, CURSOR_NEXTLINE);
+    display.printf("%i<LY<%i", LeftYMin, LeftYMax);
     delay(10);
+
+
   }
-  display.clear();
+
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
+  display.setCursor(0, 0);
   Serial.printf("lx: [%i < rawLeftX < %i] ly: [%i < rawLeftY < %i] Middle: [%i,%i]\n", LeftXMin, LeftXMax, LeftYMin, LeftYMax, LeftXMiddle, LeftYMiddle);
 
   confirm_pressed = false;
 
   delay(1000);
+  display.setCursor(0, 0);
+  display.print(" Move left stick");
+  display.setCursor(0, CURSOR_NEXTLINE);
+  display.print("   in circles   ");
 
   while (!confirm_pressed)
   {
@@ -753,36 +835,150 @@ void calibrationScreen()
       RightXMin = rawRightX;
     if (rawRightY < RightYMin)
       RightYMin = rawRightY;
+    
+    display.fillRect(0,0, 240, 40, ILI9341_BLACK);
+    display.setCursor(110, 0);
+    display.printf("%i<RX<%i", RightXMin, RightXMax);
 
-    display.setCursor(0, 0);
-    display.printf("%i<RX<%i       ", RightXMin, RightXMax);
-
-    display.setCursor(0, 1);
-    display.printf("%i<RY<%i       ", RightYMin, RightYMax);
+    display.setCursor(110, CURSOR_NEXTLINE);
+    display.printf("%i<RY<%i", RightYMin, RightYMax);
     delay(10);
   }
-  display.clear();
   Serial.printf("lx: [%i < rawRightX < %i] ly: [%i < rawRightY < %i] Middle: [%i,%i]\n", RightXMin, RightXMax, RightYMin, RightYMax, RightXMiddle, RightYMiddle);
+*/
+  bool confirm_pressed = false;
 
-  NVS.setInt("lXMCal", LeftXMiddle);
-  NVS.setInt("lXSCal", LeftXMin);
-  NVS.setInt("lXECal", LeftXMax);
+  delay(1000);
+  display.setCursor(0, 0);
+  display.print("Press left and");
+  display.setCursor(0, CURSOR_NEXTLINE);
+  display.print("right throttle");
 
-  NVS.setInt("lYMCal", LeftYMiddle);
-  NVS.setInt("lYSCal", LeftYMin);
-  NVS.setInt("lYECal", LeftYMax);
+  while (!confirm_pressed)
+  {
+    confirm_pressed = !digitalRead(BUTTON_CONFIRM_PIN);
+    auto rawLT = analogRead(LEFT_THROTTLE_PIN);
+    auto rawRT = analogRead(RIGHT_THROTTLE_PIN);
 
-  NVS.setInt("rXMCal", RightXMiddle);
-  NVS.setInt("rXSCal", RightXMin);
-  NVS.setInt("rXECal", RightXMax);
+    // Max
+    if (rawLT > LTMax)
+      LTMax = rawLT;
+    if (rawRT > RTMax)
+      RTMax = rawRT;
 
-  NVS.setInt("rYMCal", RightYMiddle);
-  NVS.setInt("rYSCal", RightYMin);
-  NVS.setInt("rYECal", RightYMax);
+    // Min
+    if (rawLT < LTMin)
+      LTMin = rawLT;
+    if (rawRT < RTMin)
+      RTMin = rawRT;
+    
+    //
+    display.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+
+    display.setCursor(110, 0);
+    display.printf("LT: %4i<%4i<%4i", LTMin, rawLT, LTMax);
+
+    display.setCursor(110, CURSOR_NEXTLINE);
+    display.printf("LT: %4i<%4i<%4i", RTMin, rawRT ,RTMax);
+    delay(10);
+  }
+  Serial.printf("LT diff: [%i < rawLT < %i] RT diff: [%i < rawRT < %i]\n", LTMin, LTMax, RTMin, RTMax);
+
+  confirm_pressed = false;
+
+  delay(1000);
+  display.fillRect(0,0, 240, 40, ILI9341_BLACK);
+
+  display.setCursor(0, 0);
+  display.print("Release both throttles");
+  display.setCursor(0, CURSOR_NEXTLINE);
+  display.print("then press confirm");
+
+  while (!confirm_pressed)
+  {
+    confirm_pressed = !digitalRead(BUTTON_CONFIRM_PIN);
+  }
+  auto rawLT = analogRead(LEFT_THROTTLE_PIN);
+  auto rawRT = analogRead(RIGHT_THROTTLE_PIN);
+  int rtStart, rtEnd, ltStart, ltEnd;
+  if (abs(rawLT - LTMax) < abs(rawRT - RTMin))
+  {
+    ltStart = LTMax;
+    ltEnd = LTMin;
+  }
+  else
+  {
+    ltStart = LTMin;
+    ltEnd = LTMax;
+  }
+  
+  if (abs(rawLT - LTMax) < abs(rawLT - LTMin))
+  {
+    rtStart = RTMax;
+    rtEnd = RTMin;
+  }
+  else
+  {
+    rtStart = RTMin;
+    rtEnd = RTMax;
+  }
+  
+  Serial.printf("ltStart=%d, ltEnd=%d; rtStart=%d, rtEnd=%d\n", ltStart, ltEnd, rtStart, rtEnd);
+
+  NVS.setInt("lXMCal", 0);
+  NVS.setInt("lXSCal", 0);
+  NVS.setInt("lXECal", 0);
+
+  NVS.setInt("lYMCal", 0);
+  NVS.setInt("lYSCal", 0);
+  NVS.setInt("lYECal", 0);
+
+  NVS.setInt("rXMCal", 0);
+  NVS.setInt("rXSCal", 0);
+  NVS.setInt("rXECal", 0);
+
+  NVS.setInt("rYMCal", 0);
+  NVS.setInt("rYSCal", 0);
+  NVS.setInt("rYECal", 0);
+
+  NVS.setInt("LTSCal", ltStart);
+  NVS.setInt("LTECal", ltEnd);
+  NVS.setInt("RTSCal", rtStart);
+  NVS.setInt("RTECal", rtEnd);
+  
 
   NVS.commit();
 
   delay(1000);
+
+/*  confirm_pressed = false;
+
+  delay(1000);
+  display.setCursor(0, 0);
+  display.print("Rotate wheel to middle");
+  display.setCursor(0, CURSOR_NEXTLINE);
+  display.print("and press confirm");
+
+  while (!confirm_pressed)
+  {
+    confirm_pressed = !digitalRead(BUTTON_CONFIRM_PIN);
+    auto rawY = ypr[0];
+
+    // Max
+    if (rawY > WheelMax)
+      WheelMax = rawY;
+
+    // Min
+    if (rawY < WheelMin)
+      LTMin = rawLT;
+    //
+    display.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+
+    display.setCursor(110, 0);
+    display.printf("A=: %4f<%4f<%4f",WheelMin, rawY, WheelMax );
+    delay(10);
+  }
+  */
 
   menu.switchMenu(MENU_MAIN);
 }
@@ -790,9 +986,14 @@ void calibrationScreen()
 void loop()
 {
   handleScroll();
+  //Serial.printf("y=%d\n",inputs.readGyroYaw());
   button.handle();
   if (menu.updateSticks())
+  {
     inputs.update();
+  }
+    
+
   delayMicroseconds(500);
   if (menu.getMenu() == MENU_CONNECTED_TO_BOBBYCAR && nothingPressed())
   {
@@ -804,21 +1005,21 @@ void loop()
       snprintf(buf1, 32, "%.2fkm/h [%u%u%u%u]       ", bobbycarAvgSpeed, pBLEErrors[0], pBLEErrors[1], pBLEErrors[2], pBLEErrors[3]);
       display.print(String(buf1).substring(0, 16));
 
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       char buf2[32];
       snprintf(buf2, 32, "%.1fW  %.1fA              ", bobbycarTotalPower, bobbycarTotalCurrent);
       display.print(String(buf2).substring(0, 16));
     }
     else if (100 < timer && timer < 200)
     {
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       char buf2[32];
       snprintf(buf2, 32, "f:%.1fC b:%.1fC           ", pBLETemperatures[0], pBLETemperatures[1]);
       display.print(String(buf2).substring(0, 16));
     }
     else if (200 < timer && timer < 300)
     {
-      display.setCursor(0, 1);
+      display.setCursor(0, CURSOR_NEXTLINE);
       char buf2[32];
       snprintf(buf2, 32, "f:%.1fV b:%.1fV           ", pBLEVoltages[0], pBLEVoltages[1]);
       display.print(String(buf2).substring(0, 16));
